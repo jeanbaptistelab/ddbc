@@ -824,7 +824,6 @@ T get(T)(Statement stmt, string filter) {
   T entity;
   static immutable getSQL = generateSelectForGetSQLWithFilter!T();
   ResultSet r;
-  writeln(getSQL ~ filter);
   r = stmt.executeQuery(getSQL ~ filter);
   r.next();
   mixin(getAllColumnsReadCode!T());
