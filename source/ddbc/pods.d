@@ -786,10 +786,10 @@ string joinFieldList(fieldList...)() {
 
 /// returns "SELECT <field list> FROM <table name>"
 string generateSelectSQL(T, fieldList...)() {
-    string res = "SELECT ";
-    res ~= joinFieldList!fieldList;
-    res ~= " FROM " ~ getTableNameForType!(T)();
-    return res;
+  string res = "SELECT ";
+  res ~= joinFieldList!fieldList;
+  res ~= " FROM " ~ getTableNameForType!(T)();
+  return res;
 }
 
 unittest {
@@ -838,6 +838,8 @@ struct select(T, fieldList...) if (__traits(isPOD, T)) {
   static immutable selectSQL = generateSelectSQL!(T, fieldList)();
   string whereCondSQL;
   string orderBySQL;
+  bool distinctSQL;
+  string groupBySQL;
   this(Statement stmt) {
     this.stmt = stmt;
   }
@@ -849,14 +851,30 @@ struct select(T, fieldList...) if (__traits(isPOD, T)) {
     orderBySQL = " ORDER BY " ~ order;
     return this;
   }
+  ref select groupBy(string group) {
+    groupBySQL = " GROUP BY " ~ group;
+    return this;
+  }
+  ref select distinct() {
+    distinctSQL = true;
+    return this;
+  }
   ref T front() {
     return entity;
   }
   void popFront() {
   }
   @property bool empty() {
-    if (!r)
-      r = stmt.executeQuery(selectSQL ~ whereCondSQL ~ orderBySQL);
+    if (!r){
+      auto finalSQL = "";
+      if (distinctSQL) {
+        finalSQL = replace(selectSQL, "SELECT", "SELECT DISTINCT");
+      } else {
+        finalSQL = selectSQL;
+      }
+      finalSQL ~= whereCondSQL ~ orderBySQL ~ groupBySQL;
+      r = stmt.executeQuery(finalSQL);
+    }
     if (!r.next())
       return true;
     mixin(getAllColumnsReadCode!(T, fieldList));
@@ -870,21 +888,21 @@ struct select(T, fieldList...) if (__traits(isPOD, T)) {
 
 /// returns "INSERT INTO <table name> (<field list>) VALUES (value list)
 string generateInsertSQL(T)() {
-    string res = "INSERT INTO " ~ getTableNameForType!(T)();
-    string []values;
-    foreach(m; __traits(allMembers, T)) {
-      if (m != "id") {
-        static if (__traits(compiles, (typeof(__traits(getMember, T, m))))){
-          // skip non-public members
-          static if (__traits(getProtection, __traits(getMember, T, m)) == "public") {
-            values ~= m;
-          }
+  string res = "INSERT INTO " ~ getTableNameForType!(T)();
+  string []values;
+  foreach(m; __traits(allMembers, T)) {
+    if (m != "id") {
+      static if (__traits(compiles, (typeof(__traits(getMember, T, m))))){
+        // skip non-public members
+        static if (__traits(getProtection, __traits(getMember, T, m)) == "public") {
+          values ~= m;
         }
       }
     }
-    res ~= "(" ~ join(values, ",") ~ ")";
-    res ~= " VALUES ";
-    return res;
+  }
+  res ~= "(" ~ join(values, ",") ~ ")";
+  res ~= " VALUES ";
+  return res;
 }
 
 string addFieldValue(T)(string m) {
@@ -902,25 +920,25 @@ string addFieldValue(T)(string m) {
 }
 
 bool insert(T)(Statement stmt, ref T o) if (__traits(isPOD, T)) {
-    auto insertSQL = generateInsertSQL!(T)();
-    string []values;
-    foreach(m; __traits(allMembers, T)) {
-      if (m != "id") {
-        static if (__traits(compiles, (typeof(__traits(getMember, T, m))))){
-          // skip non-public members
-          static if (__traits(getProtection, __traits(getMember, T, m)) == "public") {
-            // pragma(msg,addFieldValue!(T)(m));
-            mixin(addFieldValue!(T)(m));
-          }
+  auto insertSQL = generateInsertSQL!(T)();
+  string []values;
+  foreach(m; __traits(allMembers, T)) {
+    if (m != "id") {
+      static if (__traits(compiles, (typeof(__traits(getMember, T, m))))){
+        // skip non-public members
+        static if (__traits(getProtection, __traits(getMember, T, m)) == "public") {
+          // pragma(msg,addFieldValue!(T)(m));
+          mixin(addFieldValue!(T)(m));
         }
       }
     }
-    insertSQL ~= "(" ~ join(values, ",") ~ ")";
-    Variant insertId;
-    stmt.executeUpdate(insertSQL, insertId);
-    o.id = insertId.get!long;
-    return true;
-}
+  }
+  insertSQL ~= "(" ~ join(values, ",") ~ ")";
+  Variant insertId;
+  stmt.executeUpdate(insertSQL, insertId);
+  o.id = insertId.get!long;
+  return true;
+ }
 
 /// returns "UPDATE <table name> SET field1=value1 WHERE id=id
 string generateUpdateSQL(T)() {
@@ -945,25 +963,25 @@ string addUpdateValue(T)(string m) {
 }
 
 bool update(T)(Statement stmt, ref T o) if (__traits(isPOD, T)) {
-    auto updateSQL = generateUpdateSQL!(T)();
-    string []values;
-    foreach(m; __traits(allMembers, T)) {
-      if (m != "id") {
-        static if (__traits(compiles, (typeof(__traits(getMember, T, m))))){
-          // skip non-public members
-          static if (__traits(getProtection, __traits(getMember, T, m)) == "public") {
-            // pragma(msg, addUpdateValue!(T)(m));
-            mixin(addUpdateValue!(T)(m));
-          }
+  auto updateSQL = generateUpdateSQL!(T)();
+  string []values;
+  foreach(m; __traits(allMembers, T)) {
+    if (m != "id") {
+      static if (__traits(compiles, (typeof(__traits(getMember, T, m))))){
+        // skip non-public members
+        static if (__traits(getProtection, __traits(getMember, T, m)) == "public") {
+          // pragma(msg, addUpdateValue!(T)(m));
+          mixin(addUpdateValue!(T)(m));
         }
       }
     }
-    updateSQL ~= join(values, ",");
-    updateSQL ~= mixin(`" WHERE id="~ to!string(o.id) ~ ";"`);
-    Variant updateId;
-    stmt.executeUpdate(updateSQL, updateId);
-    return true;
-}
+  }
+  updateSQL ~= join(values, ",");
+  updateSQL ~= mixin(`" WHERE id="~ to!string(o.id) ~ ";"`);
+  Variant updateId;
+  stmt.executeUpdate(updateSQL, updateId);
+  return true;
+ }
 
 /// returns "DELETE FROM <table name> WHERE id=id
 string generateDeleteSQL(T)() {
@@ -977,77 +995,77 @@ bool remove(T)(Statement stmt, ref T o) if (__traits(isPOD, T)) {
   Variant deleteId;
   stmt.executeUpdate(deleteSQL, deleteId);
   return true;
-}
+ }
 
 template isSupportedSimpleTypeRef(M) {
-    alias typeof(M) ti;
-    static if (!__traits(isRef, M)) {
-        enum bool isSupportedSimpleTypeRef = false;
-    } else static if (is(ti == bool)) {
-        enum bool isSupportedSimpleType = true;
-    } else static if (is(ti == byte)) {
-        enum bool isSupportedSimpleType = true;
-    } else static if (is(ti == short)) {
-        enum bool isSupportedSimpleType = true;
-    } else static if (is(ti == int)) {
-        enum bool isSupportedSimpleType = true;
-    } else static if (is(ti == long)) {
-        enum bool isSupportedSimpleType = true;
-    } else static if (is(ti == ubyte)) {
-        enum bool isSupportedSimpleType = true;
-    } else static if (is(ti == ushort)) {
-        enum bool isSupportedSimpleType = true;
-    } else static if (is(ti == uint)) {
-        enum bool isSupportedSimpleType = true;
-    } else static if (is(ti == ulong)) {
-        enum bool isSupportedSimpleType = true;
-    } else static if (is(ti == float)) {
-        enum bool isSupportedSimpleType = true;
-    } else static if (is(ti == double)) {
-        enum bool isSupportedSimpleType = true;
-    } else static if (is(ti == Nullable!byte)) {
-        enum bool isSupportedSimpleType = true;
-    } else static if (is(ti == Nullable!short)) {
-        enum bool isSupportedSimpleType = true;
-    } else static if (is(ti == Nullable!int)) {
-        enum bool isSupportedSimpleType = true;
-    } else static if (is(ti == Nullable!long)) {
-        enum bool isSupportedSimpleType = true;
-    } else static if (is(ti == Nullable!ubyte)) {
-        enum bool isSupportedSimpleType = true;
-    } else static if (is(ti == Nullable!ushort)) {
-        enum bool isSupportedSimpleType = true;
-    } else static if (is(ti == Nullable!uint)) {
-        enum bool isSupportedSimpleType = true;
-    } else static if (is(ti == Nullable!ulong)) {
-        enum bool isSupportedSimpleType = true;
-    } else static if (is(ti == Nullable!float)) {
-        enum bool isSupportedSimpleType = true;
-    } else static if (is(ti == Nullable!double)) {
-        enum bool isSupportedSimpleType = true;
-    } else static if (is(ti == string)) {
-        enum bool isSupportedSimpleType = true;
-    } else static if (is(ti == String)) {
-        enum bool isSupportedSimpleType = true;
-    } else static if (is(ti == DateTime)) {
-        enum bool isSupportedSimpleType = true;
-    } else static if (is(ti == Date)) {
-        enum bool isSupportedSimpleType = true;
-    } else static if (is(ti == TimeOfDay)) {
-        enum bool isSupportedSimpleType = true;
-    } else static if (is(ti == Nullable!DateTime)) {
-        enum bool isSupportedSimpleType = true;
-    } else static if (is(ti == Nullable!Date)) {
-        enum bool isSupportedSimpleType = true;
-    } else static if (is(ti == Nullable!TimeOfDay)) {
-        enum bool isSupportedSimpleType = true;
-    } else static if (is(ti == byte[])) {
-        enum bool isSupportedSimpleType = true;
-    } else static if (is(ti == ubyte[])) {
-        enum bool isSupportedSimpleType = true;
-    } else static if (true) {
-        enum bool isSupportedSimpleType = false;
-    }
+  alias typeof(M) ti;
+  static if (!__traits(isRef, M)) {
+    enum bool isSupportedSimpleTypeRef = false;
+  } else static if (is(ti == bool)) {
+    enum bool isSupportedSimpleType = true;
+  } else static if (is(ti == byte)) {
+    enum bool isSupportedSimpleType = true;
+  } else static if (is(ti == short)) {
+    enum bool isSupportedSimpleType = true;
+  } else static if (is(ti == int)) {
+    enum bool isSupportedSimpleType = true;
+  } else static if (is(ti == long)) {
+    enum bool isSupportedSimpleType = true;
+  } else static if (is(ti == ubyte)) {
+    enum bool isSupportedSimpleType = true;
+  } else static if (is(ti == ushort)) {
+    enum bool isSupportedSimpleType = true;
+  } else static if (is(ti == uint)) {
+    enum bool isSupportedSimpleType = true;
+  } else static if (is(ti == ulong)) {
+    enum bool isSupportedSimpleType = true;
+  } else static if (is(ti == float)) {
+    enum bool isSupportedSimpleType = true;
+  } else static if (is(ti == double)) {
+    enum bool isSupportedSimpleType = true;
+  } else static if (is(ti == Nullable!byte)) {
+    enum bool isSupportedSimpleType = true;
+  } else static if (is(ti == Nullable!short)) {
+    enum bool isSupportedSimpleType = true;
+  } else static if (is(ti == Nullable!int)) {
+    enum bool isSupportedSimpleType = true;
+  } else static if (is(ti == Nullable!long)) {
+    enum bool isSupportedSimpleType = true;
+  } else static if (is(ti == Nullable!ubyte)) {
+    enum bool isSupportedSimpleType = true;
+  } else static if (is(ti == Nullable!ushort)) {
+    enum bool isSupportedSimpleType = true;
+  } else static if (is(ti == Nullable!uint)) {
+    enum bool isSupportedSimpleType = true;
+  } else static if (is(ti == Nullable!ulong)) {
+    enum bool isSupportedSimpleType = true;
+  } else static if (is(ti == Nullable!float)) {
+    enum bool isSupportedSimpleType = true;
+  } else static if (is(ti == Nullable!double)) {
+    enum bool isSupportedSimpleType = true;
+  } else static if (is(ti == string)) {
+    enum bool isSupportedSimpleType = true;
+  } else static if (is(ti == String)) {
+    enum bool isSupportedSimpleType = true;
+  } else static if (is(ti == DateTime)) {
+    enum bool isSupportedSimpleType = true;
+  } else static if (is(ti == Date)) {
+    enum bool isSupportedSimpleType = true;
+  } else static if (is(ti == TimeOfDay)) {
+    enum bool isSupportedSimpleType = true;
+  } else static if (is(ti == Nullable!DateTime)) {
+    enum bool isSupportedSimpleType = true;
+  } else static if (is(ti == Nullable!Date)) {
+    enum bool isSupportedSimpleType = true;
+  } else static if (is(ti == Nullable!TimeOfDay)) {
+    enum bool isSupportedSimpleType = true;
+  } else static if (is(ti == byte[])) {
+    enum bool isSupportedSimpleType = true;
+  } else static if (is(ti == ubyte[])) {
+    enum bool isSupportedSimpleType = true;
+  } else {
+    enum bool isSupportedSimpleType = false;
+  }
 }
 
 // TODO: use better way to count parameters
@@ -1069,50 +1087,69 @@ bool isSupportedSimpleTypeRefList(destList...)() {
 }
 
 struct select(Args...)  {//if (isSupportedSimpleTypeRefList!Args())
-    private Statement stmt;
-    private ResultSet r;
-    private void delegate() _copyFunction;
-    private int rowIndex;
+  private Statement stmt;
+  private ResultSet r;
+  private void delegate() _copyFunction;
+  private int rowIndex;
     
-    this(Args...)(Statement stmt, string sql, ref Args args) {
-        this.stmt = stmt;
-        selectSQL = sql;
-        _copyFunction = delegate() {
-            foreach(i, ref a; args) {
-                int index = i + 1;
-                mixin(getPropertyWriteCode!(typeof(a)));
-            }
-        };
-    }
+  this(Args...)(Statement stmt, string sql, ref Args args) {
+    this.stmt = stmt;
+    selectSQL = sql;
+    _copyFunction = delegate() {
+      foreach(i, ref a; args) {
+        int index = i + 1;
+        mixin(getPropertyWriteCode!(typeof(a)));
+      }
+    };
+  }
 
-    string selectSQL;
-    string whereCondSQL;
-    string orderBySQL;
-    ref select where(string whereCond) {
-        whereCondSQL = " WHERE " ~ whereCond;
-        return this;
+  string selectSQL;
+  string whereCondSQL;
+  string orderBySQL;
+  bool distinctSQL;
+  string groupBySQL;
+
+  ref select where(string whereCond) {
+    whereCondSQL = " WHERE " ~ whereCond;
+    return this;
+  }
+  ref select orderBy(string order) {
+    orderBySQL = " ORDER BY " ~ order;
+    return this;
+  }
+  ref select distinct() {
+    distinctSQL = true;
+    return this;
+  }
+  ref select groupBy(string group) {
+    groupBySQL = " GROUP BY " ~ group;
+    return this;
+  }
+  int front() {
+    return rowIndex;
+  }
+  void popFront() {
+    rowIndex++;
+  }
+  @property bool empty() {
+    if (!r) {
+      auto finalSQL = "";
+      if (distinctSQL) {
+        finalSQL = replace(selectSQL, "SELECT", "SELECT DISTINCT");
+      } else {
+        finalSQL = selectSQL;
+      }
+      finalSQL ~= whereCondSQL ~ orderBySQL ~ groupBySQL;
+      r = stmt.executeQuery(finalSQL);
     }
-    ref select orderBy(string order) {
-        orderBySQL = " ORDER BY " ~ order;
-        return this;
-    }
-    int front() {
-        return rowIndex;
-    }
-    void popFront() {
-        rowIndex++;
-    }
-    @property bool empty() {
-        if (!r)
-            r = stmt.executeQuery(selectSQL ~ whereCondSQL ~ orderBySQL);
-        if (!r.next())
-            return true;
-        _copyFunction();
-        return false;
-    }
-    ~this() {
-        if (r)
-            r.close();
-    }
+    if (!r.next())
+      return true;
+    _copyFunction();
+    return false;
+  }
+  ~this() {
+  if (r)
+    r.close();
+}
 
 }
