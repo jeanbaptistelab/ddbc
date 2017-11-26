@@ -1,11 +1,11 @@
 /**
-DDBC - D DataBase Connector - abstraction layer for RDBMS access, with interface similar to JDBC. 
+DDBC - D DataBase Connector - abstraction layer for RDBMS access, with interface similar to JDBC.
 
 Source file ddbc/drivers/pgsqlddbc.d.
  DDBC library attempts to provide implementation independent interface to different databases.
- 
+
  Set of supported RDBMSs can be extended by writing Drivers for particular DBs.
- 
+
  JDBC documentation can be found here:
  $(LINK http://docs.oracle.com/javase/1.5.0/docs/api/java/sql/package-summary.html)$(BR)
 
@@ -445,7 +445,7 @@ string getPropertyReadCode(alias T)() {
     return "entity." ~ T.stringof;
 }
 
-static immutable bool[] ColumnTypeCanHoldNulls = 
+static immutable bool[] ColumnTypeCanHoldNulls =
 [
     false, //BOOL_TYPE     // bool
     false, //BYTE_TYPE,    // byte
@@ -484,7 +484,7 @@ bool isColumnTypeNullableByDefault(T, string m)() {
     return ColumnTypeCanHoldNulls[getPropertyMemberType!(T,m)];
 }
 
-static immutable string[] ColumnTypeKeyIsSetCode = 
+static immutable string[] ColumnTypeKeyIsSetCode =
 [
     "(%s != 0)", //BOOL_TYPE     // bool
     "(%s != 0)", //BYTE_TYPE,    // byte
@@ -523,7 +523,7 @@ string getColumnTypeKeyIsSetCode(T, string m)() {
     return substituteParam(ColumnTypeKeyIsSetCode[getPropertyMemberType!(T,m)()], getPropertyReadCode!(T,m)());
 }
 
-static immutable string[] ColumnTypeIsNullCode = 
+static immutable string[] ColumnTypeIsNullCode =
 [
     "(false)", //BOOL_TYPE     // bool
     "(false)", //BYTE_TYPE,    // byte
@@ -562,7 +562,7 @@ string getColumnTypeIsNullCode(T, string m)() {
     return substituteParam(ColumnTypeIsNullCode[getPropertyMemberType!(T,m)()], getPropertyReadCode!(T,m)());
 }
 
-static immutable string[] ColumnTypeSetNullCode = 
+static immutable string[] ColumnTypeSetNullCode =
 [
     "bool nv;", // BOOL_TYPE   // bool
     "byte nv = 0;", //BYTE_TYPE,    // byte
@@ -597,7 +597,7 @@ static immutable string[] ColumnTypeSetNullCode =
     "ubyte[] nv = null;", //UBYTE_ARRAY_TYPE, // ubyte[]
 ];
 
-static immutable string[] ColumnTypePropertyToVariant = 
+static immutable string[] ColumnTypePropertyToVariant =
 [
     "Variant(%s)", //BOOL_TYPE     // bool
     "Variant(%s)", //BYTE_TYPE,    // byte
@@ -632,7 +632,7 @@ static immutable string[] ColumnTypePropertyToVariant =
     "Variant(%s)", //UBYTE_ARRAY_TYPE, // ubyte[]
 ];
 
-static immutable string[] ColumnTypeDatasetReaderCode = 
+static immutable string[] ColumnTypeDatasetReaderCode =
 [
     "r.getBoolean(index)", //BOOL_TYPE,    // bool
     "r.getByte(index)", //BYTE_TYPE,    // byte
@@ -998,7 +998,7 @@ bool remove(T)(Statement stmt, ref T o) if (__traits(isPOD, T)) {
  }
 
 template isSupportedSimpleTypeRef(M) {
-  alias typeof(M) ti;
+    alias typeof(M) ti;
   static if (!__traits(isRef, M)) {
     enum bool isSupportedSimpleTypeRef = false;
   } else static if (is(ti == bool)) {
@@ -1063,18 +1063,18 @@ template isSupportedSimpleTypeRef(M) {
     enum bool isSupportedSimpleType = true;
   } else static if (is(ti == ubyte[])) {
     enum bool isSupportedSimpleType = true;
-  } else {
+  } else static if (true) {
     enum bool isSupportedSimpleType = false;
   }
 }
 
 // TODO: use better way to count parameters
 int paramCount(destList...)() {
-    int res = 0;
-    foreach(p; destList) {
-        res++;
-    }
-    return res;
+  int res = 0;
+  foreach(p; destList) {
+    res++;
+  }
+  return res;
 }
 
 bool isSupportedSimpleTypeRefList(destList...)() {
@@ -1091,7 +1091,7 @@ struct select(Args...)  {//if (isSupportedSimpleTypeRefList!Args())
   private ResultSet r;
   private void delegate() _copyFunction;
   private int rowIndex;
-    
+
   this(Args...)(Statement stmt, string sql, ref Args args) {
     this.stmt = stmt;
     selectSQL = sql;
