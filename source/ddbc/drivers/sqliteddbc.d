@@ -36,6 +36,7 @@ version(USE_SQLITE) {
     //import ddbc.drivers.sqlite;
     import ddbc.drivers.utils;
     import etc.c.sqlite3;
+    import std.traits : isSomeString;
 
 
     version (Windows) {
@@ -65,6 +66,72 @@ version(USE_SQLITE) {
                 return createConnectionPool("sqlite:" ~ SQLITE_UNITTEST_FILENAME);
             }
         }
+    }
+
+    /// Converts from a selection of the standard SQLite time formats into a DateTime object.
+    private DateTime fromResultSet(S)(in S sqliteString) @safe pure
+        if (isSomeString!S) {
+
+        try {
+            switch (sqliteString.length) {
+                case 5:
+                    if (sqliteString[2] == ':') {
+                        // HH:MM
+                        int hours = cast(int) to!uint(sqliteString[0..2]);
+                        int minutes = cast(int) to!uint(sqliteString[3..5]);
+                        return DateTime(0, 1, 1, hours, minutes);
+                    }
+                    break;
+                case 8:
+                    if (sqliteString[2] == ':' && sqliteString[5] == ':') {
+                        // HH:MM:SS
+                        auto time = TimeOfDay.fromISOExtString(sqliteString);
+                        return DateTime(Date(), time);
+                    }
+                    break;
+                case 10:
+                    if (sqliteString[4] == '-' && sqliteString[7] == '-') {
+                        // YYYY-MM-DD
+                        auto date = Date.fromISOExtString(sqliteString);
+                        return DateTime(date, TimeOfDay());
+                    }
+                    break;
+                case 12:
+                    if (sqliteString[2] == ':' && sqliteString[5] == ':') {
+                        // HH:MM:SS.SSS
+                        auto time = TimeOfDay.fromISOExtString(sqliteString[0..8]);
+                        int hours = cast(int) to!uint(sqliteString[0 .. 2]);
+                        return DateTime(Date(), time);
+                    }
+                    break;
+                case 16:
+                     // YYYY-MM-DD HH:MM
+                     // YYYY-MM-DDTHH:MM
+
+                    auto date = Date.fromISOExtString(sqliteString[0..10]);
+
+                    int hours = cast(int) to!uint(sqliteString[11 .. 13]);
+                    int minutes = cast(int) to!uint(sqliteString[14 .. 16]);
+                    auto time = TimeOfDay(hours, minutes);
+                    return DateTime(date, time);
+                case 19:
+                case 23:
+                     // YYYY-MM-DD HH:MM:SS
+                     // YYYY-MM-DD HH:MM:SS.SSS
+                     // YYYY-MM-DDTHH:MM:SS
+                     // YYYY-MM-DDTHH:MM:SS.SSS
+
+                    auto date = Date.fromISOExtString(sqliteString[0..10]);
+                    auto time = TimeOfDay.fromISOExtString(sqliteString[11..19]);
+                    return DateTime(date, time);
+                default:
+                    // Fall through to the throw statement below
+                    break;
+            }
+        } catch (ConvException) {
+            // Let the exception fall to the throw statement below
+        }
+        throw new DateTimeException(format("Unknown SQLite date string: %s", sqliteString));
     }
 
     class SQLITEConnection : ddbc.core.Connection {
@@ -228,7 +295,7 @@ version(USE_SQLITE) {
         
     public:
         void checkClosed() {
-            enforceEx!SQLException(!closed, "Statement is already closed");
+            enforce!SQLException(!closed, "Statement is already closed");
         }
         
         void lock() {
@@ -320,7 +387,7 @@ version(USE_SQLITE) {
                 &stmt,  /* OUT: Statement handle */
                 null     /* OUT: Pointer to unused portion of zSql */
                 );
-            enforceEx!SQLException(res == SQLITE_OK, "Error #" ~ to!string(res) ~ " while preparing statement " ~ query ~ " : " ~ conn.getError());
+            enforce!SQLException(res == SQLITE_OK, "Error #" ~ to!string(res) ~ " while preparing statement " ~ query ~ " : " ~ conn.getError());
             paramMetadata = createParamMetadata();
             paramCount = paramMetadata.getParameterCount();
             metadata = createMetadata();
@@ -334,7 +401,7 @@ version(USE_SQLITE) {
         // before execution of query
         private void allParamsSet() {
             for(int i = 0; i < paramCount; i++) {
-                enforceEx!SQLException(paramIsSet[i], "Parameter " ~ to!string(i + 1) ~ " is not set");
+                enforce!SQLException(paramIsSet[i], "Parameter " ~ to!string(i + 1) ~ " is not set");
             }
             if (preparing) {
                 preparing = false;
@@ -407,7 +474,7 @@ version(USE_SQLITE) {
 
             closeResultSet();
             int res = sqlite3_finalize(stmt);
-            enforceEx!SQLException(res == SQLITE_OK, "Error #" ~ to!string(res) ~ " while closing prepared statement " ~ query ~ " : " ~ conn.getError());
+            enforce!SQLException(res == SQLITE_OK, "Error #" ~ to!string(res) ~ " while closing prepared statement " ~ query ~ " : " ~ conn.getError());
             closed = true;
             conn.onStatementClosed(this);
         }
@@ -446,7 +513,7 @@ version(USE_SQLITE) {
                 // row is available
                 rowsAffected = -1;
             } else {
-                enforceEx!SQLException(false, "Error #" ~ to!string(res) ~ " while trying to execute prepared statement: "  ~ " : " ~ conn.getError());
+                enforce!SQLException(false, "Error #" ~ to!string(res) ~ " while trying to execute prepared statement: "  ~ " : " ~ conn.getError());
             }
             return rowsAffected;
         }
@@ -461,7 +528,7 @@ version(USE_SQLITE) {
             lock();
             scope(exit) unlock();
             allParamsSet();
-            enforceEx!SQLException(metadata.getColumnCount() > 0, "Query doesn't return result set");
+            enforce!SQLException(metadata.getColumnCount() > 0, "Query doesn't return result set");
             resultSet = new SQLITEResultSet(this, stmt, getMetaData());
             return resultSet;
         }
@@ -614,7 +681,7 @@ version(USE_SQLITE) {
 
         // checks index, updates lastIsNull, returns column type
         int checkIndex(int columnIndex) {
-            enforceEx!SQLException(columnIndex >= 1 && columnIndex <= columnCount, "Column index out of bounds: " ~ to!string(columnIndex));
+            enforce!SQLException(columnIndex >= 1 && columnIndex <= columnCount, "Column index out of bounds: " ~ to!string(columnIndex));
             int res = sqlite3_column_type(rs, columnIndex - 1);
             lastIsNull = (res == SQLITE_NULL);
             return res;
@@ -640,7 +707,9 @@ version(USE_SQLITE) {
             this.rs = rs;
             this.metadata = metadata;
             closed = false;
-            this.columnCount = sqlite3_data_count(rs); //metadata.getColumnCount();
+            // The column count cannot use sqlite3_data_count, because sqlite3_step has not yet been used with this result set.
+            // Because there are not results ready to return, sqlite3_data_count will return 0 causing no columns to be mapped.
+            this.columnCount = metadata.getColumnCount();
             for (int i=0; i<columnCount; i++) {
                 columnMap[metadata.getColumnName(i + 1)] = i;
             }
@@ -722,7 +791,7 @@ version(USE_SQLITE) {
                 columnCount = sqlite3_data_count(rs);
                 return true;
             } else {
-                enforceEx!SQLException(false, "Error #" ~ to!string(res) ~ " while reading query result: " ~ copyCString(sqlite3_errmsg(stmt.conn.getConnection())));
+                enforce!SQLException(false, "Error #" ~ to!string(res) ~ " while reading query result: " ~ copyCString(sqlite3_errmsg(stmt.conn.getConnection())));
                 return false;
             }
         }
@@ -822,7 +891,7 @@ version(USE_SQLITE) {
             if (s is null)
                 return dt;
             try {
-                return DateTime.fromISOString(s);
+                return fromResultSet(s);
             } catch (Throwable e) {
                 throw new SQLException("Cannot convert string to DateTime - " ~ s);
             }
@@ -833,7 +902,7 @@ version(USE_SQLITE) {
             if (s is null)
                 return dt;
             try {
-                return Date.fromISOString(s);
+                return fromResultSet(s).date;
             } catch (Throwable e) {
                 throw new SQLException("Cannot convert string to DateTime - " ~ s);
             }
@@ -844,7 +913,7 @@ version(USE_SQLITE) {
             if (s is null)
                 return dt;
             try {
-                return TimeOfDay.fromISOString(s);
+                return fromResultSet(s).timeOfDay;
             } catch (Throwable e) {
                 throw new SQLException("Cannot convert string to DateTime - " ~ s);
             }
@@ -909,7 +978,7 @@ version(USE_SQLITE) {
         }
         
         //Retrieves the fetch size for this ResultSet object.
-        override int getFetchSize() {
+        override ulong getFetchSize() {
             checkClosed();
             lock();
             scope(exit) unlock();

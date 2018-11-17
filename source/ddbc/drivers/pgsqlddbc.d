@@ -57,6 +57,7 @@ version(USE_PGSQL) {
     const int CIDOID = 29;
     const int OIDVECTOROID = 30;
     const int JSONOID = 114;
+    const int JSONBOID = 3802;
     const int XMLOID = 142;
     const int PGNODETREEOID = 194;
     const int POINTOID = 600;
@@ -431,7 +432,7 @@ version(USE_PGSQL) {
     	
     public:
     	void checkClosed() {
-    		enforceEx!SQLException(!closed, "Statement is already closed");
+    		enforce!SQLException(!closed, "Statement is already closed");
     	}
     	
     	void lock() {
@@ -558,6 +559,12 @@ version(USE_PGSQL) {
                                 case UUIDOID:
                                     v[col] = s;
                                     break;
+                                case JSONOID:
+                                    v[col] = s;
+                                    break;
+                                case JSONBOID:
+                                    v[col] = s;
+                                    break;
                                 default:
                                     throw new SQLException("Unsupported column type " ~ to!string(t));
                             }
@@ -582,9 +589,9 @@ version(USE_PGSQL) {
     		scope(exit) unlock();
 
     		PGresult * res = PQexec(conn.getConnection(), std.string.toStringz(query));
-    		enforceEx!SQLException(res !is null, "Failed to execute statement " ~ query);
+    		enforce!SQLException(res !is null, "Failed to execute statement " ~ query);
     		auto status = PQresultStatus(res);
-    		enforceEx!SQLException(status == PGRES_TUPLES_OK, getError());
+    		enforce!SQLException(status == PGRES_TUPLES_OK, getError());
     		scope(exit) PQclear(res);
 
     //		cmd = new Command(conn.getConnection(), query);
@@ -624,9 +631,9 @@ version(USE_PGSQL) {
     		lock();
     		scope(exit) unlock();
     		PGresult * res = PQexec(conn.getConnection(), std.string.toStringz(query));
-    		enforceEx!SQLException(res !is null, "Failed to execute statement " ~ query);
+    		enforce!SQLException(res !is null, "Failed to execute statement " ~ query);
     		auto status = PQresultStatus(res);
-    		enforceEx!SQLException(status == PGRES_COMMAND_OK || status == PGRES_TUPLES_OK, getError());
+    		enforce!SQLException(status == PGRES_COMMAND_OK || status == PGRES_TUPLES_OK, getError());
     		scope(exit) PQclear(res);
     		
     		string rowsAffected = copyCString(PQcmdTuples(res));
@@ -734,7 +741,7 @@ version(USE_PGSQL) {
     	}
         void checkParams() {
             foreach(i, b; paramIsSet)
-                enforceEx!SQLException(b, "Parameter " ~ to!string(i) ~ " is not set");
+                enforce!SQLException(b, "Parameter " ~ to!string(i) ~ " is not set");
         }
     	void setParam(int index, string value) {
     		checkIndex(index);
@@ -769,7 +776,7 @@ version(USE_PGSQL) {
                                  cast(const int *)lengths.ptr,
                                  cast(const int *)formats.ptr,
                                  0);
-            enforceEx!SQLException(res !is null, "Error while executing prepared statement " ~ query);
+            enforce!SQLException(res !is null, "Error while executing prepared statement " ~ query);
             metadata = createMetadata(res);
             return res;
         }
@@ -814,7 +821,7 @@ version(USE_PGSQL) {
             PGresult * res = exec();
             scope(exit) PQclear(res);
             auto status = PQresultStatus(res);
-            enforceEx!SQLException(status == PGRES_COMMAND_OK || status == PGRES_TUPLES_OK, getError(res));
+            enforce!SQLException(status == PGRES_COMMAND_OK || status == PGRES_TUPLES_OK, getError(res));
 
             string rowsAffected = copyCString(PQcmdTuples(res));
             //auto lastid = PQoidValue(res);
@@ -991,8 +998,8 @@ version(USE_PGSQL) {
     	
     	Variant getValue(int columnIndex) {
     		checkClosed();
-    		enforceEx!SQLException(columnIndex >= 1 && columnIndex <= columnCount, "Column index out of bounds: " ~ to!string(columnIndex));
-    		enforceEx!SQLException(currentRowIndex >= 0 && currentRowIndex < rowCount, "No current row in result set");
+    		enforce!SQLException(columnIndex >= 1 && columnIndex <= columnCount, "Column index out of bounds: " ~ to!string(columnIndex));
+    		enforce!SQLException(currentRowIndex >= 0 && currentRowIndex < rowCount, "No current row in result set");
     		Variant res = data[currentRowIndex][columnIndex - 1];
             lastIsNull = (res == null);
     		return res;
@@ -1320,8 +1327,8 @@ version(USE_PGSQL) {
     		checkClosed();
     		lock();
     		scope(exit) unlock();
-    		enforceEx!SQLException(columnIndex >= 1 && columnIndex <= columnCount, "Column index out of bounds: " ~ to!string(columnIndex));
-    		enforceEx!SQLException(currentRowIndex >= 0 && currentRowIndex < rowCount, "No current row in result set");
+    		enforce!SQLException(columnIndex >= 1 && columnIndex <= columnCount, "Column index out of bounds: " ~ to!string(columnIndex));
+    		enforce!SQLException(currentRowIndex >= 0 && currentRowIndex < rowCount, "No current row in result set");
     		return data[currentRowIndex][columnIndex - 1] == null;
     	}
     	
@@ -1344,7 +1351,7 @@ version(USE_PGSQL) {
     	}
     	
     	//Retrieves the fetch size for this ResultSet object.
-    	override int getFetchSize() {
+    	override ulong getFetchSize() {
     		checkClosed();
     		lock();
     		scope(exit) unlock();
